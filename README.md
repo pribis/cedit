@@ -1,14 +1,13 @@
 # cedit
 
-`cedit` is small, fast terminal editor for **C and C++ source editing only**. It is built with C99 and ncurses, stays lightweight, and focuses on quick editing instead of project management features.
+`cedit` is small, fast terminal editor. It is built with C99 and ncurses, stays lightweight, and focuses on quick editing instead of project management features.
 
 ## Scope
 
-- Supports only C/C++ files: `.c`, `.cc`, `.c++`, `.cpp`, `.h`, `.hpp`
+- Can open any file
+- Formatting and syntax coloring apply only to C/C++ files: `.c`, `.cc`, `.c++`, `.cpp`, `.h`, `.hpp`
 - Single-buffer editor only
 - No buffer list, tabs, or split views
-- No support for opening or editing non-C/C++ files
-
 If you want multiple working files at same time, use **tmux** and run one `cedit` session per pane or window. tmux is recommended way to handle "buffers" with this editor.
 
 ## Expected workflow
@@ -27,7 +26,7 @@ make
 
 ## Run
 
-Open supported file directly:
+Open file directly:
 
 ```sh
 ./cedit main.c
@@ -42,10 +41,10 @@ Or start editor and use file browser:
 ## Main features
 
 - Fast ncurses text UI
-- C/C++ syntax coloring enabled by default
-- Auto indentation and whole-file reindent
+- C/C++ syntax coloring enabled by default for supported C/C++ extensions
+- Auto indentation and whole-file reindent for supported C/C++ extensions
 - Single-file open, save, and save-as
-- File browser limited to supported source files
+- File browser can open any file
 - Search with repeat (`F3`)
 - Line number toggle (`F4`)
 - Go to line (`Ctrl-G`)
@@ -62,6 +61,7 @@ Or start editor and use file browser:
 - `F6` - reindent whole file
 - `Ctrl-F` - open file browser
 - `Ctrl-G` - go to line
+- `Ctrl-N` - new file
 - `Ctrl-S` - save
 - `Ctrl-W` - save as
 - `Ctrl-Q` - quit

@@ -123,17 +123,15 @@ static void syntax_set_pair(short pair, short fg, short bg){
   init_pair(pair, fg, bg);
 }
 
-static void syntax_apply_theme(int color_scheme_active){
+static void syntax_apply_theme(int syntax_theme_active, int popup_theme_active){
   if (!has_colors()){
       return;
     }
 
-  if (!color_scheme_active){
+  if (!syntax_theme_active){
       syntax_set_pair(CEDIT_COLOR_MAIN, -1, -1);
       syntax_set_pair(CEDIT_COLOR_COMMENT, COLOR_BLUE, -1);
       syntax_set_pair(CEDIT_COLOR_BORDER, COLOR_WHITE, -1);
-      syntax_set_pair(CEDIT_COLOR_POPUP, COLOR_YELLOW, COLOR_BLUE);
-      syntax_set_pair(CEDIT_COLOR_SHADOW, COLOR_BLACK, COLOR_BLACK);
       syntax_set_pair(CEDIT_COLOR_KEYWORD, COLOR_CYAN, -1);
       syntax_set_pair(CEDIT_COLOR_STRING, COLOR_YELLOW, -1);
       syntax_set_pair(CEDIT_COLOR_NUMBER, COLOR_MAGENTA, -1);
@@ -142,15 +140,11 @@ static void syntax_apply_theme(int color_scheme_active){
       syntax_set_pair(CEDIT_COLOR_ENTITY, COLOR_MAGENTA, -1);
       syntax_set_pair(CEDIT_COLOR_VARIABLE, COLOR_YELLOW, -1);
       syntax_set_pair(CEDIT_COLOR_CONSTANT, COLOR_CYAN, -1);
-      return;
     }
-
-  if (COLORS >= 256){
+  else if (COLORS >= 256){
       syntax_set_pair(CEDIT_COLOR_MAIN, 252, 233);
       syntax_set_pair(CEDIT_COLOR_COMMENT, 247, 233);
       syntax_set_pair(CEDIT_COLOR_BORDER, 247, 233);
-      syntax_set_pair(CEDIT_COLOR_POPUP, 252, 238);
-      syntax_set_pair(CEDIT_COLOR_SHADOW, 232, 232);
       syntax_set_pair(CEDIT_COLOR_KEYWORD, 167, 233);
       syntax_set_pair(CEDIT_COLOR_STRING, 111, 233);
       syntax_set_pair(CEDIT_COLOR_NUMBER, 189, 233);
@@ -159,22 +153,33 @@ static void syntax_apply_theme(int color_scheme_active){
       syntax_set_pair(CEDIT_COLOR_ENTITY, 141, 233);
       syntax_set_pair(CEDIT_COLOR_VARIABLE, 209, 233);
       syntax_set_pair(CEDIT_COLOR_CONSTANT, 189, 233);
-      return;
     }
+  else{
+    syntax_set_pair(CEDIT_COLOR_MAIN, COLOR_WHITE, COLOR_BLACK);
+    syntax_set_pair(CEDIT_COLOR_COMMENT, COLOR_CYAN, COLOR_BLACK);
+    syntax_set_pair(CEDIT_COLOR_BORDER, COLOR_WHITE, COLOR_BLACK);
+    syntax_set_pair(CEDIT_COLOR_KEYWORD, COLOR_RED, COLOR_BLACK);
+    syntax_set_pair(CEDIT_COLOR_STRING, COLOR_BLUE, COLOR_BLACK);
+    syntax_set_pair(CEDIT_COLOR_NUMBER, COLOR_CYAN, COLOR_BLACK);
+    syntax_set_pair(CEDIT_COLOR_PREPROC, COLOR_BLUE, COLOR_BLACK);
+    syntax_set_pair(CEDIT_COLOR_FUNCTION, COLOR_MAGENTA, COLOR_BLACK);
+    syntax_set_pair(CEDIT_COLOR_ENTITY, COLOR_MAGENTA, COLOR_BLACK);
+    syntax_set_pair(CEDIT_COLOR_VARIABLE, COLOR_YELLOW, COLOR_BLACK);
+    syntax_set_pair(CEDIT_COLOR_CONSTANT, COLOR_CYAN, COLOR_BLACK);
+  }
 
-  syntax_set_pair(CEDIT_COLOR_MAIN, COLOR_WHITE, COLOR_BLACK);
-  syntax_set_pair(CEDIT_COLOR_COMMENT, COLOR_CYAN, COLOR_BLACK);
-  syntax_set_pair(CEDIT_COLOR_BORDER, COLOR_WHITE, COLOR_BLACK);
-  syntax_set_pair(CEDIT_COLOR_POPUP, COLOR_WHITE, COLOR_BLUE);
-  syntax_set_pair(CEDIT_COLOR_SHADOW, COLOR_BLACK, COLOR_BLACK);
-  syntax_set_pair(CEDIT_COLOR_KEYWORD, COLOR_RED, COLOR_BLACK);
-  syntax_set_pair(CEDIT_COLOR_STRING, COLOR_BLUE, COLOR_BLACK);
-  syntax_set_pair(CEDIT_COLOR_NUMBER, COLOR_CYAN, COLOR_BLACK);
-  syntax_set_pair(CEDIT_COLOR_PREPROC, COLOR_BLUE, COLOR_BLACK);
-  syntax_set_pair(CEDIT_COLOR_FUNCTION, COLOR_MAGENTA, COLOR_BLACK);
-  syntax_set_pair(CEDIT_COLOR_ENTITY, COLOR_MAGENTA, COLOR_BLACK);
-  syntax_set_pair(CEDIT_COLOR_VARIABLE, COLOR_YELLOW, COLOR_BLACK);
-  syntax_set_pair(CEDIT_COLOR_CONSTANT, COLOR_CYAN, COLOR_BLACK);
+  if (!popup_theme_active){
+    syntax_set_pair(CEDIT_COLOR_POPUP, COLOR_YELLOW, COLOR_BLUE);
+    syntax_set_pair(CEDIT_COLOR_SHADOW, COLOR_BLACK, COLOR_BLACK);
+  }
+  else if (COLORS >= 256){
+    syntax_set_pair(CEDIT_COLOR_POPUP, 252, 238);
+    syntax_set_pair(CEDIT_COLOR_SHADOW, 232, 232);
+  }
+  else{
+    syntax_set_pair(CEDIT_COLOR_POPUP, COLOR_WHITE, COLOR_BLUE);
+    syntax_set_pair(CEDIT_COLOR_SHADOW, COLOR_BLACK, COLOR_BLACK);
+  }
 }
 
 static void syntax_addch(WINDOW *window, int screen_row, int *screen_col, int col_offset,
@@ -200,16 +205,16 @@ static void syntax_addch(WINDOW *window, int screen_row, int *screen_col, int co
   *screen_col += 1;
 }
 
-void syntax_init_colors(int color_scheme_active){
+void syntax_init_colors(int syntax_theme_active, int popup_theme_active){
   if (has_colors()){
       start_color();
       use_default_colors();
-      syntax_apply_theme(color_scheme_active);
+      syntax_apply_theme(syntax_theme_active, popup_theme_active);
     }
 }
 
-void syntax_set_theme(int color_scheme_active){
-  syntax_apply_theme(color_scheme_active);
+void syntax_set_theme(int syntax_theme_active, int popup_theme_active){
+  syntax_apply_theme(syntax_theme_active, popup_theme_active);
 }
 
 void syntax_draw_line(WINDOW *window, int row, const char *line, int col_offset,

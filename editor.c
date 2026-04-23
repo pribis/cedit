@@ -9,6 +9,7 @@ static void editor_draw(EditorState *editor);
 static void editor_handle_key(EditorState *editor, int key);
 static void editor_scroll(EditorState *editor);
 static void editor_move_cursor(EditorState *editor, int key);
+static int editor_color_scheme_enabled(const EditorState *editor);
 static int editor_content_cols(const EditorState *editor);
 static int editor_text_cols(const EditorState *editor);
 static int editor_line_number_width(const EditorState *editor);
@@ -36,6 +37,7 @@ static void editor_popup_text(EditorState *editor, const char *title, const char
 static void editor_popup_text_flags(EditorState *editor, const char *title, const char *text, int show_footer);
 static int editor_save(EditorState *editor, int save_as);
 static void editor_show_help(EditorState *editor);
+static void editor_new_file(EditorState *editor);
 static int editor_indent_for_newline(EditorState *editor);
 static int editor_should_auto_indent(const EditorState *editor);
 static int editor_desired_indent_for_row(const EditorState *editor, int row);
@@ -104,6 +106,11 @@ static void editor_configure_terminal(EditorState *editor){
   #endif
   #endif
   tcsetattr(STDIN_FILENO, TCSANOW, &tty);
+}
+
+static int editor_color_scheme_enabled(const EditorState *editor){
+  return editor->color_scheme_active
+         && (editor->buffer.path == NULL || cedit_supports_path(editor->buffer.path));
 }
 
 static int editor_text_rows(const EditorState *editor){
@@ -503,6 +510,7 @@ static void editor_search_dialog(EditorState *editor){
   int height;
   int start_x;
   int start_y;
+  int focus;
   size_t input_length;
   int key;
 
@@ -523,9 +531,12 @@ static void editor_search_dialog(EditorState *editor){
   shadow = editor_create_shadow(height, width, start_y, start_x);
   window = editor_create_popup(height, width, start_y, start_x);
   keypad(window, TRUE);
+  focus = 0;
   input_length = strlen(editor->search_query);
 
   while (1){
+    const char *primary_label;
+
     editor_draw(editor);
     werase(window);
     editor_draw_popup_box(window);
@@ -534,9 +545,29 @@ static void editor_search_dialog(EditorState *editor){
     mvwhline(window, 2, 2, ' ', width - 4);
     mvwaddnstr(window, 2, 2, editor->search_query, width - 5);
     mvwchgat(window, 2, 2, width - 4, A_REVERSE, 0, NULL);
-    mvwaddstr(window, 4, 2, "Enter to search. ESC to cancel");
-    wmove(window, 2, 2 + (int) input_length);
-    curs_set(1);
+    primary_label = (editor->search_active && editor->search_query[0] != '\0') ? "Next" : "Search";
+    if (focus == 1){
+      wattron(window, A_REVERSE);
+    }
+    mvwaddstr(window, 4, 2, primary_label);
+    if (focus == 1){
+      wattroff(window, A_REVERSE);
+    }
+    if (focus == 2){
+      wattron(window, A_REVERSE);
+    }
+    mvwaddstr(window, 4, 12, "Cancel");
+    if (focus == 2){
+      wattroff(window, A_REVERSE);
+    }
+    if (focus == 0){
+      wmove(window, 2, 2 + (int) input_length);
+      curs_set(1);
+    }
+    else{
+      curs_set(0);
+      wmove(window, height - 1, width - 2);
+    }
     wrefresh(window);
 
     key = wgetch(window);
@@ -545,6 +576,22 @@ static void editor_search_dialog(EditorState *editor){
     }
     if (key == KEY_F(3)){
       editor_search_next(editor);
+      continue;
+    }
+    if (key == '\t'){
+      focus = focus == 0 ? 1 : 0;
+      continue;
+    }
+    if (key == KEY_LEFT || key == KEY_RIGHT){
+      if (focus == 0){
+        focus = 1;
+      }
+      else if (focus == 1){
+        focus = key == KEY_LEFT ? 0 : 2;
+      }
+      else{
+        focus = key == KEY_RIGHT ? 0 : 1;
+      }
       continue;
     }
     if (key == KEY_BACKSPACE || key == 127 || key == '\b'){
@@ -556,10 +603,14 @@ static void editor_search_dialog(EditorState *editor){
       continue;
     }
     if (key == '\n' || key == '\r' || key == KEY_ENTER){
+      if (focus == 2){
+        break;
+      }
       editor_search_next(editor);
       continue;
     }
     if (isprint(key) && input_length + 1 < sizeof(editor->search_query)){
+      focus = 0;
       editor->search_query[input_length++] = (char) key;
       editor->search_query[input_length] = '\0';
       editor_search_reset(editor);
@@ -815,9 +866,9 @@ static void editor_draw_rows(EditorState *editor){
     if (gutter_width > 0){
       mvwhline(content, row, 0, ' ', gutter_width);
       mvwprintw(content, row, 0, "%*d ", gutter_width - 1, buffer_row + 1);
-    }
-    syntax_draw_line(text, row, editor->buffer.lines[buffer_row],
-    editor->col_offset, text_cols, editor->color_scheme_active);
+      }
+      syntax_draw_line(text, row, editor->buffer.lines[buffer_row],
+      editor->col_offset, text_cols, editor_color_scheme_enabled(editor));
 
     if (editor_has_selection(editor)){
       int start_y;
@@ -851,7 +902,7 @@ static void editor_draw_rows(EditorState *editor){
       }
       if (end_col > start_col){
         mvwchgat(content, row, start_col, end_col - start_col,
-        A_REVERSE | (editor->color_scheme_active ? A_BOLD : A_NORMAL),
+        A_REVERSE | (editor_color_scheme_enabled(editor) ? A_BOLD : A_NORMAL),
         0, NULL);
       }
     }
@@ -864,6 +915,7 @@ static void editor_draw_rows(EditorState *editor){
 
 static void editor_draw_status(EditorState *editor){
   const char *file_name_only;
+  const char *mode_text;
   char file_name[PATH_MAX + 32];
 
   if (editor->buffer.path == NULL){
@@ -877,8 +929,10 @@ static void editor_draw_status(EditorState *editor){
   move(editor->screen_rows - 1, 0);
   clrtoeol();
   attron(A_REVERSE | COLOR_PAIR(CEDIT_COLOR_MAIN));
-  snprintf(file_name, sizeof(file_name), " Ln %d, Col %d | %s%s ",
+  mode_text = editor_color_scheme_enabled(editor) ? "syntax color on" : "plain text";
+  snprintf(file_name, sizeof(file_name), " Ln %d, Col %d | %s | %s%s ",
            editor->cursor_y + 1, editor->cursor_x + 1,
+           mode_text,
            file_name_only, editor->buffer.dirty ? " *" : "");
   mvaddnstr(editor->screen_rows - 1, 0, file_name, editor->screen_cols - 1);
 
@@ -1221,11 +1275,7 @@ static int editor_indent_for_newline(EditorState *editor){
 }
 
 static int editor_should_auto_indent(const EditorState *editor){
-  if (editor->buffer.path == NULL){
-    return 1;
-  }
-
-  return cedit_supports_path(editor->buffer.path);
+  return editor->buffer.path == NULL || cedit_supports_path(editor->buffer.path);
 }
 
 static int editor_desired_indent_for_row(const EditorState *editor, int row){
@@ -1392,6 +1442,11 @@ static void editor_indent_file(EditorState *editor){
   int row;
   int cursor_x;
 
+  if (!editor_should_auto_indent(editor)){
+    editor_set_status(editor, "formatting only for C/C++ files");
+    return;
+  }
+
   for (row = 0; row < editor->buffer.line_count; row++){
     const char *line;
     int desired_indent;
@@ -1424,7 +1479,7 @@ static void editor_indent_file(EditorState *editor){
 static int editor_save(EditorState *editor, int save_as){
   char path[PATH_MAX];
 
-  if (!editor->buffer.dirty){
+  if (!save_as && !editor->buffer.dirty){
     editor_set_status(editor, "nothing to save");
     return 1;
   }
@@ -1441,13 +1496,6 @@ static int editor_save(EditorState *editor, int save_as){
 
   if (!browser_save_as(editor, editor->browser_dir, path, sizeof(path))){
     editor_set_status(editor, "save canceled");
-    return 0;
-  }
-
-  if (!cedit_supports_path(path)){
-    editor_popup_text(editor, "Unsupported extension",
-    "CEdit only saves C/C++ source and header files.");
-    editor_set_status(editor, "save blocked");
     return 0;
   }
 
@@ -1468,6 +1516,27 @@ static int editor_save(EditorState *editor, int save_as){
   return 0;
 }
 
+static void editor_new_file(EditorState *editor){
+  if (editor->buffer.dirty
+      && !editor_confirm(editor, "New file", "Unsaved changes. Create new file?")){
+    editor_set_status(editor, "new file canceled");
+    return;
+  }
+
+  editor_clear_undo(editor);
+  editor_clear_selection(editor);
+  editor_search_reset(editor);
+  buffer_free(&editor->buffer);
+  buffer_init(&editor->buffer);
+  editor->cursor_x = 0;
+  editor->cursor_y = 0;
+  editor->row_offset = 0;
+  editor->col_offset = 0;
+  editor->last_opened_path[0] = '\0';
+  syntax_set_theme(editor_color_scheme_enabled(editor), editor->color_scheme_active);
+  editor_set_status(editor, editor_color_scheme_enabled(editor) ? "syntax color on" : "plain text");
+}
+
 static void editor_show_help(EditorState *editor){
   editor_popup_text(
   editor,
@@ -1480,6 +1549,7 @@ static void editor_show_help(EditorState *editor){
   "Ctrl-G        Go to line\n"
   "F6            Reindent whole file\n"
   "Ctrl-F        Open file browser\n"
+  "Ctrl-N        New file\n"
   "Ctrl-S        Save file\n"
   "Ctrl-W        Save file as\n"
   "Ctrl-Q        Quit editor\n"
@@ -1505,8 +1575,13 @@ static void editor_show_help(EditorState *editor){
 
 static void editor_toggle_color_scheme(EditorState *editor){
   editor->color_scheme_active = !editor->color_scheme_active;
-  syntax_set_theme(editor->color_scheme_active);
-  editor_set_status(editor, editor->color_scheme_active ? "color scheme on" : "plain text");
+  syntax_set_theme(editor_color_scheme_enabled(editor), editor->color_scheme_active);
+  if (editor->color_scheme_active && !editor_color_scheme_enabled(editor)){
+    editor_set_status(editor, "plain text for this file type");
+  }
+  else{
+    editor_set_status(editor, editor->color_scheme_active ? "color scheme on" : "plain text");
+  }
 }
 
 static void editor_open_browser(EditorState *editor){
@@ -1514,13 +1589,6 @@ static void editor_open_browser(EditorState *editor){
 
   if (!browser_browse(editor, editor->browser_dir, path, sizeof(path))){
     editor_set_status(editor, "open canceled");
-    return;
-  }
-
-  if (!cedit_supports_path(path)){
-    editor_popup_text(editor, "Unsupported file",
-    "CEdit opens C/C++ source and header files.");
-    editor_set_status(editor, "open blocked");
     return;
   }
 
@@ -1564,6 +1632,10 @@ static void editor_handle_key(EditorState *editor, int key){
 
     case KEY_F(4):
     editor->show_line_numbers = !editor->show_line_numbers;
+    return;
+
+    case CEDIT_CTRL_KEY('n'):
+    editor_new_file(editor);
     return;
 
     case CEDIT_CTRL_KEY('s'):
@@ -1756,7 +1828,7 @@ void editor_init(EditorState *editor){
   noecho();
   keypad(stdscr, TRUE);
   meta(stdscr, TRUE);
-  syntax_init_colors(editor->color_scheme_active);
+  syntax_init_colors(editor_color_scheme_enabled(editor), editor->color_scheme_active);
   editor_init_key_sequences();
   editor_configure_terminal(editor);
   curs_set(1);
@@ -1780,6 +1852,7 @@ void editor_open(EditorState *editor, const char *path){
   editor->col_offset = 0;
   strlcpy(editor->last_opened_path, path, sizeof(editor->last_opened_path));
   editor_set_browser_dir(editor, path);
+  syntax_set_theme(editor_color_scheme_enabled(editor), editor->color_scheme_active);
   editor_set_status(editor, "opened %s", path);
 }
 

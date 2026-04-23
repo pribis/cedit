@@ -3,11 +3,14 @@
 
 static WINDOW *browser_create_shadow(int height, int width, int start_y, int start_x);
 static WINDOW *browser_create_popup(int height, int width, int start_y, int start_x);
-static int browser_read_key(WINDOW *window);
+static void browser_draw_popup_box(WINDOW *window);
+static void browser_draw_button(WINDOW *window, int row, int col,
+                                const char *label, int focused);
 static int browser_is_visible_entry(const EditorState *editor, const char *path, int is_dir);
 static void browser_seed_input(const char *directory, char *input, size_t input_size);
 static void browser_cleanup(BrowserState *browser, WINDOW *window, WINDOW *shadow);
 static void browser_select_last_opened(const EditorState *editor, BrowserState *browser);
+static void browser_notice(const EditorState *editor, const char *title, const char *message);
 
 static void browser_free(BrowserState *browser){
   size_t index;
@@ -82,30 +85,33 @@ static WINDOW * browser_create_popup(int height, int width, int start_y, int sta
   return window;
 }
 
-static int browser_read_key(WINDOW *window){
-  int key;
+static void browser_draw_popup_box(WINDOW *window){
+  if (has_colors()){
+    wattron(window, COLOR_PAIR(CEDIT_COLOR_POPUP) | A_BOLD);
+  }
+  box(window, 0, 0);
+  if (has_colors()){
+    wattroff(window, COLOR_PAIR(CEDIT_COLOR_POPUP) | A_BOLD);
+    wattron(window, COLOR_PAIR(CEDIT_COLOR_POPUP));
+  }
+}
 
-  (void) window;
-  key = getch();
-  if (key == KEY_UP || key == KEY_DOWN){
-    return key;
+static void browser_draw_button(WINDOW *window, int row, int col,
+                                const char *label, int focused){
+  if (focused){
+    wattron(window, A_REVERSE | A_BOLD);
   }
-  if (key == 'k'){
-    return KEY_UP;
+  mvwaddstr(window, row, col, label);
+  if (focused){
+    wattroff(window, A_REVERSE | A_BOLD);
   }
-  if (key == 'j'){
-    return KEY_DOWN;
-  }
-  return key;
 }
 
 static int browser_is_visible_entry(const EditorState *editor, const char *path, int is_dir){
   (void) editor;
-  if (is_dir){
-    return 1;
-  }
-
-  return cedit_supports_path(path);
+  (void) path;
+  (void) is_dir;
+  return 1;
 }
 
 static void browser_seed_input(const char *directory, char *input, size_t input_size){
@@ -131,6 +137,43 @@ static void browser_cleanup(BrowserState *browser, WINDOW *window, WINDOW *shado
     delwin(shadow);
   }
   browser_free(browser);
+}
+
+static void browser_notice(const EditorState *editor, const char *title, const char *message){
+  WINDOW *window;
+  WINDOW *shadow;
+  int width;
+  int height;
+  int start_x;
+  int start_y;
+
+  width = (int) strlen(message) + 8;
+  if (width < 28){
+    width = 28;
+  }
+  if (width > editor->screen_cols - 2){
+    width = editor->screen_cols - 2;
+  }
+  height = 6;
+  start_x = (editor->screen_cols - width) / 2;
+  start_y = (editor->screen_rows - height) / 2;
+
+  shadow = browser_create_shadow(height, width, start_y, start_x);
+  window = browser_create_popup(height, width, start_y, start_x);
+  keypad(window, TRUE);
+
+  werase(window);
+  browser_draw_popup_box(window);
+  mvwprintw(window, 0, 2, " %s ", title);
+  mvwaddnstr(window, 2, 2, message, width - 4);
+  mvwaddstr(window, 3, 2, "[Press any key]");
+  wrefresh(window);
+  wgetch(window);
+
+  delwin(window);
+  if (shadow != NULL){
+    delwin(shadow);
+  }
 }
 
 static void browser_select_last_opened(const EditorState *editor, BrowserState *browser){
@@ -346,7 +389,7 @@ char *selected_path, size_t selected_size){
     wmove(window, height - 1, width - 2);
     wrefresh(window);
 
-    key = browser_read_key(window);
+    key = wgetch(window);
     if (key == 27){
       browser_cleanup(&browser, window, shadow);
       return 0;
@@ -390,114 +433,101 @@ char *selected_path, size_t selected_size){
 }
 
 int browser_save_as(const EditorState *editor, const char *initial_dir,
-char *selected_path, size_t selected_size){
-  BrowserState browser;
+                char *selected_path, size_t selected_size){
   WINDOW *window;
   WINDOW *shadow;
   int width;
   int height;
   int start_x;
   int start_y;
-  int view_rows;
-  int offset;
+  int focus;
   int key;
+  int input_offset;
+  int input_width;
+  char directory[PATH_MAX];
   char input[PATH_MAX];
   size_t input_length;
 
-  memset(&browser, 0, sizeof(browser));
-  if (!browser_load(editor, &browser, initial_dir)){
-    browser_free(&browser);
-    return 0;
+  if (initial_dir == NULL || *initial_dir == '\0'){
+    strlcpy(directory, ".", sizeof(directory));
   }
-  if (browser.count > 1){
-    browser.selected = 1;
+  else if (realpath(initial_dir, directory) == NULL){
+    strlcpy(directory, initial_dir, sizeof(directory));
   }
-
-  browser_seed_input(browser.cwd, input, sizeof(input));
+  browser_seed_input(directory, input, sizeof(input));
   input_length = strlen(input);
+  focus = 0;
 
-  width = editor->screen_cols > 96 ? 96 : editor->screen_cols - 4;
-  height = editor->screen_rows > 26 ? 26 : editor->screen_rows - 2;
+  width = editor->screen_cols > 72 ? 72 : editor->screen_cols - 4;
+  height = 9;
   if (width < 40){
     width = 40;
   }
-  if (height < 12){
-    height = 12;
+  if (height > editor->screen_rows - 2){
+    height = editor->screen_rows - 2;
   }
 
   start_x = (editor->screen_cols - width) / 2;
   start_y = (editor->screen_rows - height) / 2;
-  view_rows = height - 7;
-  offset = 0;
 
   shadow = browser_create_shadow(height, width, start_y, start_x);
   window = browser_create_popup(height, width, start_y, start_x);
   keypad(window, TRUE);
   set_escdelay(75);
-  browser.cursor_state = curs_set(0);
+  curs_set(1);
 
   while (1){
-    int row;
-
-    if ((int) browser.selected < offset){
-      offset = (int) browser.selected;
-    }
-    if ((int) browser.selected >= offset + view_rows){
-      offset = (int) browser.selected - view_rows + 1;
-    }
-
     werase(window);
-    if (has_colors()){
-      wattron(window, COLOR_PAIR(CEDIT_COLOR_POPUP) | A_BOLD);
-    }
-    box(window, 0, 0);
-    if (has_colors()){
-      wattroff(window, COLOR_PAIR(CEDIT_COLOR_POPUP) | A_BOLD);
-      wattron(window, COLOR_PAIR(CEDIT_COLOR_POPUP));
-    }
+    browser_draw_popup_box(window);
     mvwprintw(window, 0, 2, " Save file as ");
-    mvwprintw(window, 1, 2, "Location: %s", browser.cwd);
-    for (row = 0; row < view_rows; row++){
-      int entry_index;
-      const BrowserEntry *entry;
-      char display[PATH_MAX + 8];
-      char marker;
-
-      entry_index = offset + row;
-      if ((size_t) entry_index >= browser.count){
-        break;
-      }
-
-      entry = &browser.entries[entry_index];
-      marker = (size_t) entry_index == browser.selected ? '>' : ' ';
-      snprintf(display, sizeof(display), "%c %s%s",
-      marker, entry->name, entry->is_dir ? "/" : "");
-      mvwaddnstr(window, row + 2, 2, display, width - 4);
+    mvwaddstr(window, 1, 2, "Save path:");
+    input_width = width - 8;
+    if (input_width < 1){
+      input_width = 1;
     }
-    mvwaddstr(window, height - 4, 2, "Save path:");
-    mvwaddnstr(window, height - 3, 2, input, width - 4);
-    mvwaddstr(window, height - 2, 2, "Type name. Enter=open dir/save Esc=cancel");
-    wmove(window, height - 1, width - 2);
+    mvwaddch(window, 2, 2, ACS_ULCORNER);
+    mvwhline(window, 2, 3, ACS_HLINE, width - 6);
+    mvwaddch(window, 2, width - 3, ACS_URCORNER);
+    mvwaddch(window, 3, 2, ACS_VLINE);
+    mvwhline(window, 3, 3, ' ', width - 6);
+    mvwaddch(window, 3, width - 3, ACS_VLINE);
+    mvwaddch(window, 4, 2, ACS_LLCORNER);
+    mvwhline(window, 4, 3, ACS_HLINE, width - 6);
+    mvwaddch(window, 4, width - 3, ACS_LRCORNER);
+    input_offset = (int) input_length - input_width;
+    if (input_offset < 0){
+      input_offset = 0;
+    }
+    mvwaddnstr(window, 3, 3, input + input_offset, input_width);
+
+    browser_draw_button(window, 6, 2, "Save", focus == 1);
+    browser_draw_button(window, 6, 12, "Cancel", focus == 2);
+
+    if (focus == 0){
+      curs_set(1);
+      if ((int) input_length - input_offset >= input_width){
+        wmove(window, 3, 3 + input_width - 1);
+      }
+      else{
+        wmove(window, 3, 3 + (int) input_length - input_offset);
+      }
+    }
+    else{
+      curs_set(1);
+      wmove(window, 6, focus == 1 ? 2 : 12);
+    }
     wrefresh(window);
 
-    key = browser_read_key(window);
+    key = wgetch(window);
     if (key == 27){
-      browser_cleanup(&browser, window, shadow);
+      curs_set(1);
+      if (window != NULL){
+        delwin(window);
+      }
+      if (shadow != NULL){
+        delwin(shadow);
+      }
       return 0;
-    }
-
-    if (key == KEY_UP){
-      if (browser.selected > 0){
-        browser.selected--;
-      }
-      continue;
-    }
-
-    if (key == KEY_DOWN){
-      if (browser.selected + 1 < browser.count){
-        browser.selected++;
-      }
-      continue;
     }
 
     if (key == KEY_BACKSPACE || key == 127 || key == '\b'){
@@ -508,48 +538,60 @@ char *selected_path, size_t selected_size){
       continue;
     }
 
-    if (key == '\n' || key == KEY_ENTER || key == '\r'){
-      BrowserEntry *entry;
-      char default_input[PATH_MAX];
+    if (key == '\t'){
+      focus = focus == 0 ? 1 : (focus == 1 ? 2 : 0);
+      continue;
+    }
 
-      browser_seed_input(browser.cwd, default_input, sizeof(default_input));
-      if (input[0] != '\0' && strcmp(input, default_input) != 0
-      && strcmp(input, browser.cwd) != 0){
-        if (cedit_dir_exists(input)){
-          browser_load(editor, &browser, input);
-          browser.selected = browser.count > 1 ? 1 : 0;
-          browser_seed_input(browser.cwd, input, sizeof(input));
-          input_length = strlen(input);
-          continue;
-        }
-
-        strlcpy(selected_path, input, selected_size);
-        browser_cleanup(&browser, window, shadow);
-        return 1;
+    if (key == KEY_LEFT || key == KEY_RIGHT){
+      if (focus == 0){
+        focus = 1;
       }
-
-      if (browser.count == 0){
-        continue;
-      }
-
-      entry = &browser.entries[browser.selected];
-      if (entry->is_dir){
-        if (strcmp(entry->path, browser.cwd) != 0){
-          browser_load(editor, &browser, entry->path);
-          browser.selected = browser.count > 1 ? 1 : 0;
-          browser_seed_input(browser.cwd, input, sizeof(input));
-          input_length = strlen(input);
-        }
+      else if (focus == 1){
+        focus = key == KEY_LEFT ? 0 : 2;
       }
       else{
-        strlcpy(selected_path, entry->path, selected_size);
-        browser_cleanup(&browser, window, shadow);
+        focus = key == KEY_RIGHT ? 0 : 1;
+      }
+      continue;
+    }
+
+    if ((key == '\n' || key == KEY_ENTER || key == '\r') && focus == 2){
+      curs_set(1);
+      if (window != NULL){
+        delwin(window);
+      }
+      if (shadow != NULL){
+        delwin(shadow);
+      }
+      return 0;
+    }
+
+    if ((key == '\n' || key == KEY_ENTER || key == '\r') && focus != 2){
+      const char *name;
+
+      name = strrchr(input, '/');
+      name = name == NULL ? input : name + 1;
+      if (*name == '\0'){
+        browser_notice(editor, "Save file as", "Enter a filename.");
+        continue;
+      }
+      if (input[0] != '\0'){
+        strlcpy(selected_path, input, selected_size);
+        curs_set(1);
+        if (window != NULL){
+          delwin(window);
+        }
+        if (shadow != NULL){
+          delwin(shadow);
+        }
         return 1;
       }
       continue;
     }
 
     if (isprint(key) && input_length + 1 < sizeof(input)){
+      focus = 0;
       input[input_length++] = (char) key;
       input[input_length] = '\0';
     }
