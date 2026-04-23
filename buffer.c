@@ -237,23 +237,29 @@ void buffer_insert_newline(TextBuffer *buffer, int *row, int *col, int indent_sp
 
   left = buffer_substring(line, 0, (size_t) *col);
   right = buffer_substring(line, (size_t) *col, length - (size_t) *col);
-  new_line = malloc((size_t) indent_spaces + strlen(right) + 1);
-  if (left == NULL || right == NULL || new_line == NULL){
+  if (left == NULL || right == NULL){
     free(left);
     free(right);
-    free(new_line);
+    return;
+  }
+  new_line = malloc((size_t) indent_spaces + strlen(right) + 1);
+  if (new_line == NULL){
+    free(left);
+    free(right);
     return;
   }
 
   memset(new_line, ' ', (size_t) indent_spaces);
   strcpy(new_line + indent_spaces, right);
 
-  free(buffer->lines[*row]);
-  buffer->lines[*row] = left;
   if (!buffer_insert_line(buffer, *row + 1, new_line)){
+    free(left);
+    free(right);
     return;
   }
 
+  free(buffer->lines[*row]);
+  buffer->lines[*row] = left;
   free(right);
   *row += 1;
   *col = indent_spaces;

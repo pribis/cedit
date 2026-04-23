@@ -1,6 +1,7 @@
 #include "editor.h"
 #include "browser.h"
 #include "buffer.h"
+#include "popup.h"
 #include "syntax.h"
 #include "util.h"
 
@@ -14,9 +15,6 @@ static int editor_content_cols(const EditorState *editor);
 static int editor_text_cols(const EditorState *editor);
 static int editor_line_number_width(const EditorState *editor);
 static void editor_draw_frame(EditorState *editor);
-static WINDOW *editor_create_shadow(int height, int width, int start_y, int start_x);
-static WINDOW *editor_create_popup(int height, int width, int start_y, int start_x);
-static void editor_draw_popup_box(WINDOW *window);
 static void editor_clear_undo(EditorState *editor);
 static void editor_capture_undo(EditorState *editor);
 static void editor_restore_undo(EditorState *editor);
@@ -314,6 +312,7 @@ static char * editor_selection_text(const EditorState *editor){
   int start_y;
   int end_y;
   char *copy;
+  char *grown;
   size_t length;
 
   if (!editor_has_selection(editor)){
@@ -334,10 +333,12 @@ static char * editor_selection_text(const EditorState *editor){
     return NULL;
   }
   length = strlen(copy);
-  copy = realloc(copy, length + 2);
-  if (copy == NULL){
+  grown = realloc(copy, length + 2);
+  if (grown == NULL){
+    free(copy);
     return NULL;
   }
+  copy = grown;
   copy[length] = '\n';
   copy[length + 1] = '\0';
   return copy;
@@ -528,8 +529,12 @@ static void editor_search_dialog(EditorState *editor){
   }
   start_y = 1;
 
-  shadow = editor_create_shadow(height, width, start_y, start_x);
-  window = editor_create_popup(height, width, start_y, start_x);
+  shadow = popup_create_shadow(height, width, start_y, start_x);
+  window = popup_create_window(height, width, start_y, start_x);
+  if (window == NULL){
+    popup_destroy(NULL, shadow);
+    return;
+  }
   keypad(window, TRUE);
   focus = 0;
   input_length = strlen(editor->search_query);
@@ -539,27 +544,15 @@ static void editor_search_dialog(EditorState *editor){
 
     editor_draw(editor);
     werase(window);
-    editor_draw_popup_box(window);
+    popup_draw_box(window);
     mvwprintw(window, 0, 2, " Search ");
     mvwaddstr(window, 1, 2, "Find:");
     mvwhline(window, 2, 2, ' ', width - 4);
     mvwaddnstr(window, 2, 2, editor->search_query, width - 5);
     mvwchgat(window, 2, 2, width - 4, A_REVERSE, 0, NULL);
     primary_label = (editor->search_active && editor->search_query[0] != '\0') ? "Next" : "Search";
-    if (focus == 1){
-      wattron(window, A_REVERSE);
-    }
-    mvwaddstr(window, 4, 2, primary_label);
-    if (focus == 1){
-      wattroff(window, A_REVERSE);
-    }
-    if (focus == 2){
-      wattron(window, A_REVERSE);
-    }
-    mvwaddstr(window, 4, 12, "Cancel");
-    if (focus == 2){
-      wattroff(window, A_REVERSE);
-    }
+    popup_draw_button(window, 4, 2, primary_label, focus == 1);
+    popup_draw_button(window, 4, 12, "Cancel", focus == 2);
     if (focus == 0){
       wmove(window, 2, 2 + (int) input_length);
       curs_set(1);
@@ -618,10 +611,7 @@ static void editor_search_dialog(EditorState *editor){
   }
 
   curs_set(1);
-  delwin(window);
-  if (shadow != NULL){
-    delwin(shadow);
-  }
+  popup_destroy(window, shadow);
 }
 
 static void editor_goto_line(EditorState *editor){
@@ -645,8 +635,12 @@ static void editor_goto_line(EditorState *editor){
   }
   height = 8;
   editor_centered_window(editor, width, height, &start_x, &start_y);
-  shadow = editor_create_shadow(height, width, start_y, start_x);
-  window = editor_create_popup(height, width, start_y, start_x);
+  shadow = popup_create_shadow(height, width, start_y, start_x);
+  window = popup_create_window(height, width, start_y, start_x);
+  if (window == NULL){
+    popup_destroy(NULL, shadow);
+    return;
+  }
   keypad(window, TRUE);
   focus = 0;
   input[0] = '\0';
@@ -655,7 +649,7 @@ static void editor_goto_line(EditorState *editor){
   while (1){
     editor_draw(editor);
     werase(window);
-    editor_draw_popup_box(window);
+    popup_draw_box(window);
     mvwprintw(window, 0, 2, " Go to line ");
     mvwaddstr(window, 1, 2, "Line:");
     mvwhline(window, 2, 2, ' ', width - 4);
@@ -663,20 +657,8 @@ static void editor_goto_line(EditorState *editor){
     if (focus == 0){
       mvwchgat(window, 2, 2, width - 4, A_REVERSE, 0, NULL);
     }
-    if (focus == 1){
-      wattron(window, A_REVERSE);
-    }
-    mvwaddstr(window, 4, 2, "[G]o");
-    if (focus == 1){
-      wattroff(window, A_REVERSE);
-    }
-    if (focus == 2){
-      wattron(window, A_REVERSE);
-    }
-    mvwaddstr(window, 4, 10, "[C]ancel");
-    if (focus == 2){
-      wattroff(window, A_REVERSE);
-    }
+    popup_draw_button(window, 4, 2, "[G]o", focus == 1);
+    popup_draw_button(window, 4, 10, "[C]ancel", focus == 2);
     mvwaddstr(window, 6, 2, "Enter/G=go C/Esc=cancel");
     if (focus == 0){
       wmove(window, 2, 2 + (int) input_length);
@@ -751,10 +733,7 @@ static void editor_goto_line(EditorState *editor){
   }
 
   curs_set(1);
-  delwin(window);
-  if (shadow != NULL){
-    delwin(shadow);
-  }
+  popup_destroy(window, shadow);
 }
 
 static void editor_delete_selection(EditorState *editor){
@@ -972,48 +951,6 @@ static void editor_draw(EditorState *editor){
   refresh();
 }
 
-static WINDOW * editor_create_shadow(int height, int width, int start_y, int start_x){
-  WINDOW *shadow;
-
-  if (!has_colors()){
-    return NULL;
-  }
-  if (start_y + 1 + height > LINES || start_x + 2 + width > COLS){
-    return NULL;
-  }
-
-  shadow = newwin(height, width, start_y + 1, start_x + 2);
-  if (shadow == NULL){
-    return NULL;
-  }
-
-  wbkgd(shadow, COLOR_PAIR(CEDIT_COLOR_SHADOW) | A_DIM);
-  werase(shadow);
-  wrefresh(shadow);
-  return shadow;
-}
-
-static WINDOW * editor_create_popup(int height, int width, int start_y, int start_x){
-  WINDOW *window;
-
-  window = newwin(height, width, start_y, start_x);
-  if (window != NULL && has_colors()){
-    wbkgd(window, COLOR_PAIR(CEDIT_COLOR_POPUP));
-  }
-  return window;
-}
-
-static void editor_draw_popup_box(WINDOW *window){
-  if (has_colors()){
-    wattron(window, COLOR_PAIR(CEDIT_COLOR_POPUP) | A_BOLD);
-  }
-  box(window, 0, 0);
-  if (has_colors()){
-    wattroff(window, COLOR_PAIR(CEDIT_COLOR_POPUP) | A_BOLD);
-    wattron(window, COLOR_PAIR(CEDIT_COLOR_POPUP));
-  }
-}
-
 static int editor_confirm(EditorState *editor, const char *title, const char *message){
   WINDOW *window;
   int width;
@@ -1033,30 +970,28 @@ static int editor_confirm(EditorState *editor, const char *title, const char *me
   height = 6;
 
   editor_centered_window(editor, width, height, &start_x, &start_y);
-  shadow = editor_create_shadow(height, width, start_y, start_x);
-  window = editor_create_popup(height, width, start_y, start_x);
+  shadow = popup_create_shadow(height, width, start_y, start_x);
+  window = popup_create_window(height, width, start_y, start_x);
+  if (window == NULL){
+    popup_destroy(NULL, shadow);
+    return 0;
+  }
   keypad(window, TRUE);
 
   while (1){
     werase(window);
-    editor_draw_popup_box(window);
+    popup_draw_box(window);
     mvwprintw(window, 0, 2, " %s ", title);
     mvwaddnstr(window, 2, 2, message, width - 4);
     mvwaddstr(window, 3, 2, "[Y]es  [N]o");
     wrefresh(window);
     key = wgetch(window);
     if (key == 'y' || key == 'Y'){
-      delwin(window);
-      if (shadow != NULL){
-        delwin(shadow);
-      }
+      popup_destroy(window, shadow);
       return 1;
     }
     if (key == 'n' || key == 'N' || key == 27){
-      delwin(window);
-      if (shadow != NULL){
-        delwin(shadow);
-      }
+      popup_destroy(window, shadow);
       return 0;
     }
   }
@@ -1107,8 +1042,13 @@ const char *text, int show_footer){
   }
 
   editor_centered_window(editor, width, height, &start_x, &start_y);
-  shadow = editor_create_shadow(height, width, start_y, start_x);
-  window = editor_create_popup(height, width, start_y, start_x);
+  shadow = popup_create_shadow(height, width, start_y, start_x);
+  window = popup_create_window(height, width, start_y, start_x);
+  if (window == NULL){
+    popup_destroy(NULL, shadow);
+    free(copy);
+    return;
+  }
   keypad(window, TRUE);
   offset = 0;
 
@@ -1117,7 +1057,7 @@ const char *text, int show_footer){
 
     max_rows = height - 4;
     werase(window);
-    editor_draw_popup_box(window);
+    popup_draw_box(window);
     mvwprintw(window, 0, 2, " %s ", title);
     for (row = 0; row < max_rows; row++){
       int index;
@@ -1145,10 +1085,7 @@ const char *text, int show_footer){
     }
   }
 
-  delwin(window);
-  if (shadow != NULL){
-    delwin(shadow);
-  }
+  popup_destroy(window, shadow);
   free(copy);
 }
 
