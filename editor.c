@@ -1603,6 +1603,7 @@ static void editor_handle_key(EditorState *editor, int key){
         free(selected);
         editor_set_status(editor, "copied");
       }
+      editor_clear_selection(editor);
     }
     else{
       editor_set_status(editor, "nothing selected");
