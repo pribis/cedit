@@ -1,0 +1,90 @@
+Program name:
+cedit
+
+Preamble:
+In this file ignore any line starting with #
+
+Overview:
+An TUI based editor for editing C code.
+The editor is specific to C and C++ code and nothing else.
+Floating windows will be used for file browsing, error/warnig messages, etc.
+
+Startup will open the editor with a floating window with the following message:
+Welcome to CEdit. The C/C++ only editor.
+
+Program theme:
+Background: black
+Foreground: green
+Comments: yellow.  
+Function names: bold.
+Parameters: normal
+
+
+
+
+Program coding:
+Program will be written in C using C99 specifications.
+Use header files for prototypes, #includes, #define and any other preprossesor definitions.
+Divide program up function.  For example, file functionality should go in a file named "file.c" and "file.h". Editing functions will go in "edit.c" and "edit.h", etc.
+The main file will be called main.c and the compiled object will be "cedit"
+Use make with a Makefile to run compilation.
+
+Windowing:
+Floating windows will be used for error/warning messages. Fit to message.
+Floating window used for file browsing.
+Floating window used for help screen.
+Esc will close window without doing anything (This is for canceling operation).
+
+Help:
+Popup window help screen to include Editor Global Commands, 
+
+File Browsing:
+Arrow keys will be used for movement.
+Enter will open folder.
+Up arrow used for going up in file system.
+Hidden files are shown
+Make file browser look like a normal file browser.
+On new file, current directory will be assumed. List all current folders along with ".." for directory above current.
+On subsequent save and open, the selected directory will be used. 
+
+Formatting:
+Formatting will occure automatically on the following file extensions: .c, .cc, c++, cpp, .h.
+File extensions from the conf file will also be used. See Configuration section.
+
+All formating will follow the GNU coding standard found at: https://www.gnu.org/prep/standards/html_node/Formatting.html
+Indentation will be automatic on ENTER
+TAB will indent current line when at beginning of first symbol or line using GNU standard mentioned above.
+
+
+Configuration:
+A configuration file will be used.
+yaml format. This will need to be read by cedit on opening.
+The default location will be located at: ~/.cedit.yaml
+If no configuration file is found, program defaults will be used.
+
+
+Configuration Sections:
+extensions: list of additional extensions that can be opened. The following are defaults and do not need to be included: .c, .cc, c++, cpp, .h 
+
+
+Editor Global Commands:
+
+CTL-f: open file
+CTL-s: save file
+CTL-w: save file as - prompt the user for a file name. Warn if the file already exists.  This function will automatically happen if the current file is new.
+CTL-q: quit. Give a floating window
+CTL-c: compile program.  See "Compile" section.
+
+
+#Compile:
+#CTL-c will compile the program.  User will be prompted.  The popup will have the options [Y]es and [N]o.  User will respond by pressing the Y or N key.
+#cedit will look for a Makefile to execute.  If no Makefile is found, compile all c and header files. Use the file with the "main()" fuction as the main file. 
+
+#Makefile editor
+
+Editor Movement Commands:
+Use arrows to move around the file.
+CTL and arrows will do the following: CTL-[Left Arrow] move to the beginning of the line. CTL-[Right Arrow] move to the end of the line. CTL-[Up Arrow] move to the top of the screen. CTL-[Down Arrow] move to the bottom of the screen.
+
+All other keys will perform as a normal text editor would.
+
